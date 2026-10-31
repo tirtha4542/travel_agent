@@ -1,25 +1,24 @@
-langchian
-langgraph
-langchain_core
-langchain_community
-langsmith
-langchain-groq
-pydentic
-dotenv
-langchain-tavily
-psycopg[binary]
-psycopg_pool
-python-dotenv
-tavily-python
-requests
-langgraph-checkpoint-postgres
-airportsdata
-pycountry
-fastapi
-uvicorn
-jinja2
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+jinja2>=3.1.4
+pydantic>=2.9.0
+python-dotenv>=1.0.1
+requests>=2.32.0
+certifi>=2024.8.30
+airportsdata>=20241001
+pycountry>=24.6.1
 
+# LangChain & LangGraph Multi-Agent Stack
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+langchain-groq>=0.2.0
+langchain-tavily>=0.1.0
+langgraph>=0.2.0
+langgraph-checkpoint-postgres>=2.0.0
+langsmith>=0.1.100
 
-
-
-
+# Search & Database
+tavily-python>=0.5.0
+psycopg[binary]>=3.2.0
+psycopg-pool>=3.2.0
