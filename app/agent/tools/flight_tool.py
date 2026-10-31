@@ -173,6 +173,17 @@ CITY_MAIN_AIRPORT = {
     "sylhet": "ZYL",
     "coxs bazar": "CXB",
     "cox's bazar": "CXB",
+    "barisal": "BZL",
+    "barishal": "BZL",
+    "jessore": "JSR",
+    "jashore": "JSR",
+    "saidpur": "SPD",
+    "syedpur": "SPD",
+    "rajshahi": "RJH",
+    
+    # Nepal
+    "kathmandu": "KTM",
+    "pokhara": "PKR",
     
     # Maldives & Sri Lanka
     "male": "MLE",
@@ -335,22 +346,28 @@ def extract_locations_from_query(query: str) -> tuple[str | None, str | None, st
 
 
 def country_name_to_code(text: str) -> str | None:
-    """Maps country names or aliases to a 2-letter ISO country code."""
+    """Maps country names or aliases to a 2-letter ISO country code using word boundaries."""
     cleaned = clean_text(text)
+    if not cleaned:
+        return None
+    # 1. Exact alias match
     if cleaned in COUNTRY_ALIASES:
         return COUNTRY_ALIASES[cleaned]
+    # 2. Pycountry lookup
     try:
         country = pycountry.countries.lookup(cleaned)
         return country.alpha_2
     except LookupError:
         pass
+    # 3. Whole-word alias match (prevents 'sa' from matching inside 'barisal')
+    for alias, code in COUNTRY_ALIASES.items():
+        if re.search(r'\b' + re.escape(alias) + r'\b', cleaned, re.IGNORECASE):
+            return code
+    # 4. Whole-word country name match
     for country in pycountry.countries:
         country_name = country.name.lower()
-        if country_name in cleaned or cleaned in country_name:
+        if len(country_name) >= 4 and re.search(r'\b' + re.escape(country_name) + r'\b', cleaned, re.IGNORECASE):
             return country.alpha_2
-    for alias, code in COUNTRY_ALIASES.items():
-        if alias in cleaned:
-            return code
     return None
 
 
@@ -467,44 +484,69 @@ def fetch_flights(dep_iata: str, arr_iata: str, flight_date: str | None = None, 
 
 
 def format_flight_info(flights: list[dict], dep_iata: str, arr_iata: str) -> str:
-    """Formats raw flight JSON into a clear, structured markdown response."""
+    """Formats raw flight JSON into a clear, structured markdown response with live validation links."""
     origin_airport = AIRPORTS.get(dep_iata, {}).get("name", dep_iata)
     dest_airport = AIRPORTS.get(arr_iata, {}).get("name", arr_iata)
 
-    if not flights:
-        return (
-            f"No live scheduled flights found directly between **{dep_iata}** ({origin_airport}) "
-            f"and **{arr_iata}** ({dest_airport}).\n"
-            f"- Route: {dep_iata} -> {arr_iata}\n"
-            f"- Note: Flights on this route may require a layover or schedule verification with major carriers."
-        )
+    google_flights_url = f"https://www.google.com/travel/flights?q=Flights%20from%20{dep_iata}%20to%20{arr_iata}"
+    skyscanner_url = f"https://www.skyscanner.com/transport/flights/{dep_iata.lower()}/{arr_iata.lower()}/"
 
     output = [
-        f"### Flights from {dep_iata} ({origin_airport}) to {arr_iata} ({dest_airport})\n"
+        f"### Flight Search: {dep_iata} ({origin_airport}) -> {arr_iata} ({dest_airport})\n"
     ]
 
-    for i, flight in enumerate(flights, 1):
-        airline = (flight.get("airline") or {}).get("name") or "Unknown Airline"
-        flight_iata = (flight.get("flight") or {}).get("iata") or "N/A"
-        status = (flight.get("flight_status") or "scheduled").capitalize()
+    bd_airports = {"DAC", "BZL", "CXB", "CGP", "ZYL", "JSR", "RJH", "SPD"}
+    is_bd_domestic = (dep_iata in bd_airports and arr_iata in bd_airports)
 
-        dep_info = flight.get("departure") or {}
-        arr_info = flight.get("arrival") or {}
-
-        dep_time = dep_info.get("scheduled", "N/A")
-        arr_time = arr_info.get("scheduled", "N/A")
-        dep_terminal = dep_info.get("terminal")
-        arr_terminal = arr_info.get("terminal")
-
-        terminal_str = ""
-        if dep_terminal or arr_terminal:
-            terminal_str = f" | Terminals: Dep {dep_terminal or 'Main'} -> Arr {arr_terminal or 'Main'}"
-
+    if not flights:
         output.append(
-            f"**{i}. {airline} ({flight_iata})** - Status: `{status}`\n"
-            f"   - Departure: {dep_time} ({dep_iata})\n"
-            f"   - Arrival: {arr_time} ({arr_iata}){terminal_str}\n"
+            f"**Radar Tracker Status:** No active international radar flights directly tracked on AviationStack for this route right now.\n"
         )
+        if is_bd_domestic:
+            output.append(
+                f"**Domestic Route Carriers & Real-World Flight Information:**\n"
+                f"- Scheduled commercial flights on this route are operated primarily by **US-Bangla Airlines** (ATR 72) and **Novoair** (and selected **Biman Bangladesh Airlines** frequencies).\n"
+                f"- **Flight Duration:** ~40 to 60 minutes.\n"
+                f"- **Approx. Fare Range:** Typically 3,800 - 6,500 BDT ($35 - $60 USD) one-way depending on advance booking.\n\n"
+                f"**Direct Airline Portals:**\n"
+                f"- [US-Bangla Airlines (Official)](https://usbair.com)\n"
+                f"- [Novoair Booking Portal](https://flynovoair.com)\n"
+                f"- [Biman Bangladesh Airlines](https://www.biman-airlines.com)\n"
+            )
+        else:
+            output.append(
+                f"- Note: Direct flights on this route may be seasonal or require connecting flights through a major international hub.\n"
+            )
+    else:
+        for i, flight in enumerate(flights, 1):
+            airline = (flight.get("airline") or {}).get("name") or "Unknown Airline"
+            flight_iata = (flight.get("flight") or {}).get("iata") or "N/A"
+            status = (flight.get("flight_status") or "scheduled").capitalize()
+
+            dep_info = flight.get("departure") or {}
+            arr_info = flight.get("arrival") or {}
+
+            dep_time = dep_info.get("scheduled", "N/A")
+            arr_time = arr_info.get("scheduled", "N/A")
+            dep_terminal = dep_info.get("terminal")
+            arr_terminal = arr_info.get("terminal")
+
+            terminal_str = ""
+            if dep_terminal or arr_terminal:
+                terminal_str = f" | Terminals: Dep {dep_terminal or 'Main'} -> Arr {arr_terminal or 'Main'}"
+
+            output.append(
+                f"**{i}. {airline} ({flight_iata})** - Status: `{status}`\n"
+                f"   - Departure: {dep_time} ({dep_iata})\n"
+                f"   - Arrival: {arr_time} ({arr_iata}){terminal_str}\n"
+            )
+
+    output.append(
+        f"\n**Real-Time Validation & Live Booking Links:**\n"
+        f"- [Verify Live Flights on Google Flights]({google_flights_url})\n"
+        f"- [Compare Real-Time Fares on Skyscanner]({skyscanner_url})\n"
+        f"*(Travelers must validate exact seat availability, baggage allowance, and live prices via the official links above as airfares fluctuate continuously.)*"
+    )
 
     return "\n".join(output)
 

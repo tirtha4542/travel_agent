@@ -33,6 +33,15 @@ def flight_agent(state: TravelState):
         "origin": user_location
     })
 
+    # If no live radar flights were directly tracked, enrich with real-world web search insights
+    if "Radar Tracker Status" in flight_data or "No active" in flight_data or "No live" in flight_data:
+        try:
+            web_insights = tavily_search(f"flights from {user_location or ''} for {query} airlines schedule booking price")
+            if web_insights and "temporarily unavailable" not in web_insights:
+                flight_data += f"\n\n### Web-Verified Route & Carrier Insights:\n{web_insights}"
+        except Exception:
+            pass
+
     return {
         "flight_results": flight_data,
         "messages": [AIMessage(content="flight results fetched")],

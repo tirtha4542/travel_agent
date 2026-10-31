@@ -8,7 +8,10 @@ venv_python = project_root / ".venv" / "Scripts" / "python.exe"
 
 if venv_python.exists() and Path(sys.executable).resolve() != venv_python.resolve():
     print(f"[*] Switching to virtual environment: {venv_python}")
-    sys.exit(subprocess.call([str(venv_python)] + sys.argv))
+    try:
+        sys.exit(subprocess.call([str(venv_python)] + sys.argv))
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 import uvicorn
 
