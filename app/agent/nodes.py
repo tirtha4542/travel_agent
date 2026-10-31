@@ -23,9 +23,16 @@ llm = ChatGroq(model="openai/gpt-oss-120b", api_key=GROQ_API_KEY, max_tokens=100
 
 
 def flight_agent(state: TravelState):
-    """Fetches real-time flight options for the user's travel request."""
+    """Fetches real-time flight options, honoring explicit query origin or user's detected location."""
     query = state["user_query"]
-    flight_data = search_flights.invoke(query)
+    user_location = state.get("user_location")
+
+    # Pass user_location as fallback origin while letting query-specified origin take priority
+    flight_data = search_flights.invoke({
+        "query": query,
+        "origin": user_location
+    })
+
     return {
         "flight_results": flight_data,
         "messages": [AIMessage(content="flight results fetched")],
@@ -50,6 +57,7 @@ def itinerary_agent(state: TravelState):
         user_query=state["user_query"],
         flight_results=state["flight_results"],
         hotel_results=state["hotel_results"],
+        user_location=state.get("user_location")
     )
 
     response = llm.invoke([
@@ -71,6 +79,7 @@ def final_agent(state: TravelState):
         flight_results=state["flight_results"],
         hotel_results=state["hotel_results"],
         itinerary=state["itinerary"],
+        user_location=state.get("user_location")
     )
 
     response = llm.invoke([

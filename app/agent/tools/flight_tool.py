@@ -250,6 +250,12 @@ STOP_WORDS = {
 }
 
 
+FILLER_WORDS = {
+    'go', 'visit', 'travel', 'fly', 'trip', 'for trip', 'flights', 'flight',
+    'tour', 'ticket', 'vacation', 'holiday', 'the', 'a', 'an'
+}
+
+
 def clean_text(text: str) -> str:
     """Normalizes text, fixes common typos, and strips conversational stop words."""
     if not text:
@@ -259,6 +265,7 @@ def clean_text(text: str) -> str:
     text = re.sub(r"\btreap\b", "trip", text)
     text = re.sub(r"\bnapal\b", "nepal", text)
     text = re.sub(r"\btriep\b", "trip", text)
+    text = re.sub(r"\bhavet\b", "have", text)
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     text = re.sub(r"\s+", " ", text)
     words = [w for w in text.split() if w not in STOP_WORDS and not w.isdigit()]
@@ -268,11 +275,11 @@ def clean_text(text: str) -> str:
 def extract_locations_from_query(query: str) -> tuple[str | None, str | None, str | None]:
     """Parses natural language travel queries into (origin, destination, date).
     
-    Handles patterns like:
-    - 'plan a 7 day napal treap from bangladesh'
-    - 'flights from dhaka to nepal'
-    - 'flights to dubai from dac'
-    - 'trip to tokyo'
+    Handles queries like:
+    - 'i havet to go india to london give me the plan' -> ('india', 'london', None)
+    - 'i have to go london' -> (None, 'london', None)
+    - 'plan a 7 day napal treap from bangladesh' -> ('bangladesh', 'nepal trip', None)
+    - 'flights from dhaka to nepal' -> ('dhaka', 'nepal', None)
     """
     q = query.strip()
     
@@ -282,33 +289,49 @@ def extract_locations_from_query(query: str) -> tuple[str | None, str | None, st
     if flight_date:
         q = q.replace(flight_date, " ").strip()
 
-    # Normalize typos before regex extraction
+    # Normalize common user typos
     q_norm = re.sub(r"\btreap\b", "trip", q, flags=re.IGNORECASE)
     q_norm = re.sub(r"\bnapal\b", "nepal", q_norm, flags=re.IGNORECASE)
+    q_norm = re.sub(r"\bhavet\b", "have", q_norm, flags=re.IGNORECASE)
+
+    # Strip conversational prefixes/suffixes
+    cleaned = re.sub(r"\b(give me (the|a)?\s*(plan|itinerary)?|please|can you)\b", " ", q_norm, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^(?:i\s+)?(?:have\s+to|want\s+to|need\s+to|would\s+like\s+to|plan\s+to|planning\s+to)\s+(?:go\s+to|travel\s+to|fly\s+to|visit|go|travel|fly)\s+", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^(?:plan|make|create)\s+(?:a|the)?\s*(?:\d+\s*day[s]?)?\s*(?:trip|tour|itinerary)?\s*(?:to|for)?\s*", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
     # Pattern 1: from <origin> to <destination>
-    m1 = re.search(r"\bfrom\s+(.+?)\s+to\s+(.+)", q_norm, re.IGNORECASE)
+    m1 = re.search(r"\bfrom\s+(.+?)\s+to\s+(.+)", cleaned, re.IGNORECASE)
     if m1:
         return m1.group(1).strip(), m1.group(2).strip(), flight_date
 
     # Pattern 2: to <destination> from <origin>
-    m2 = re.search(r"\bto\s+(.+?)\s+from\s+(.+)", q_norm, re.IGNORECASE)
+    m2 = re.search(r"\bto\s+(.+?)\s+from\s+(.+)", cleaned, re.IGNORECASE)
     if m2:
         return m2.group(2).strip(), m2.group(1).strip(), flight_date
 
     # Pattern 3: <destination phrase> from <origin>
-    # (e.g. 'plan a 7 day nepal trip from bangladesh')
-    m3 = re.search(r"^(.*?)\s+from\s+(.+)", q_norm, re.IGNORECASE)
+    m3 = re.search(r"^(.*?)\s+from\s+(.+)", cleaned, re.IGNORECASE)
     if m3:
         return m3.group(2).strip(), m3.group(1).strip(), flight_date
 
-    # Pattern 4: to <destination>
-    m4 = re.search(r"\bto\s+(.+)", q_norm, re.IGNORECASE)
+    # Pattern 4: <origin> to <destination> (e.g. 'india to london', 'dhaka to tokyo')
+    m4 = re.search(r"^([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+)$", cleaned, re.IGNORECASE)
     if m4:
-        return None, m4.group(1).strip(), flight_date
+        cand_orig = m4.group(1).strip()
+        cand_dest = m4.group(2).strip()
+        if cand_orig.lower() not in FILLER_WORDS:
+            return cand_orig, cand_dest, flight_date
+        else:
+            return None, cand_dest, flight_date
+
+    # Pattern 5: to <destination> or visit <destination>
+    m5 = re.search(r"^(?:to|visit)\s+(.+)", cleaned, re.IGNORECASE)
+    if m5:
+        return None, m5.group(1).strip(), flight_date
 
     # Default fallback: entire query is treated as destination
-    return None, q_norm, flight_date
+    return None, cleaned, flight_date
 
 
 def country_name_to_code(text: str) -> str | None:
@@ -511,8 +534,12 @@ def search_flights(
     # If the user passed a natural language sentence, extract origin, destination, and date
     extracted_origin, extracted_dest, extracted_date = extract_locations_from_query(raw_query)
 
-    effective_origin = origin or extracted_origin or DEFAULT_ORIGIN
-    effective_dest = destination if (origin and destination) else (extracted_dest or destination or raw_query)
+    # Priority for Origin:
+    # 1. Explicit origin inside the user query (e.g. "india to london" -> "india")
+    # 2. Automatically detected user location passed from frontend/system (e.g. "Bangladesh")
+    # 3. System default origin ("DAC")
+    effective_origin = extracted_origin or origin or DEFAULT_ORIGIN
+    effective_dest = extracted_dest or destination or raw_query
     effective_date = date or extracted_date
 
     dep_iata = resolve_airport_code(effective_origin)
