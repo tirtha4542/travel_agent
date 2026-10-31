@@ -16,10 +16,13 @@ os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
 
 def get_database_url() -> str:
-    """Retrieves and formats PostgreSQL connection URL from environment."""
+    """Retrieves and formats PostgreSQL connection URL from environment, normalizing for cloud providers like Render."""
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         return ""
+    # Render and Heroku often provide URLs starting with postgres://, which psycopg expects as postgresql://
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
     if "sslmode" not in database_url:
         separator = "&" if "?" in database_url else "?"
         database_url = f"{database_url}{separator}sslmode=require"

@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: treapmate-ai
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: DEFAULT_ORIGIN
+        value: DAC
+      - key: GROQ_API_KEY
+        sync: false
+      - key: AVIATION_STACK_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: LANGSMITH_TRACING
+        value: "false"
+

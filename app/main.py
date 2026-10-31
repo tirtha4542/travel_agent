@@ -27,6 +27,12 @@ app.add_middleware(
 # Mount static files (CSS, JS, assets)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# Healthcheck endpoint for Render / cloud monitoring
+@app.get("/health", tags=["system"])
+async def health_check():
+    """Healthcheck endpoint for Render and cloud load balancers."""
+    return {"status": "healthy", "service": "TreapMate AI"}
+
 # Include routes
 app.include_router(views_router)
 app.include_router(chat_router)

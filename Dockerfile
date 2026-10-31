@@ -41,10 +41,10 @@ USER appuser
 # Expose FastAPI application port
 EXPOSE 8000
 
-# Container Healthcheck (pings index endpoint)
+# Container Healthcheck (pings /health endpoint)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/ || exit 1
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# Start Uvicorn production server binding to 0.0.0.0
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start Uvicorn server dynamically binding to Render's $PORT or defaulting to 8000
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 
